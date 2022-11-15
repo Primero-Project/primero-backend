@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
-contract PrimeroMarketplace is ERC1155{
+contract PrimeroMarketplace is ERC1155 {
     using Counters for Counters.Counter;
     using EnumerableSet for EnumerableSet.UintSet;
     using SafeMath for uint256;
@@ -19,20 +19,29 @@ contract PrimeroMarketplace is ERC1155{
     uint256 public listingPrice = 0.0325 ether; //incase of resell, standard price
     EnumerableSet.UintSet private _coursesUnSold; // all ids this contract holds that have not been set for sale
     mapping(uint256 => uint256) public tokensHeldBalances; // id => balance (amount held not for sale)
-    constructor() ERC1155("") {
-    }
+    EnumerableSet.UintSet private _studentId;
+    Counters.Counter private _studentIds; 
+
+    constructor() ERC1155("") {}
 
     struct Course {
         uint256 courseNFTId; //auto incremental course Id
         address payable seller; //instructor
         address payable owner; //primero's deployed contract
-        address[] buyer;
+        address[] buyer; // list of students who buy the course
         uint256 price; //cost of course
         uint256 amount;
         bool sold;
     }
 
+    struct Student {
+        address student;
+        Course courses;
+    }
+
+
     mapping(uint256 => Course) private idToCourse;
+    mapping(address => Student) public idToStudent;
 
     event CourseItemCreated(
         uint256 courseNFTId,
@@ -43,14 +52,27 @@ contract PrimeroMarketplace is ERC1155{
         bool sold
     );
 
-     Course[] private coursesArray;
-     function getListingPrice() public view returns (uint256) {
+     event StudentCoursesCreated(
+        address student,
+        Course courseId
+    );
+
+    Course[] private coursesArray; // courses in an array
+    Student[] private studentCoursesArray; // students in an array
+    Student private student;
+    Course private course;
+    function getListingPrice() public view returns (uint256) {
         return listingPrice;
     }
 
-    //fetches all courses in marketplace
-      function fetchAllCourses() public view returns (Course[] memory) {
+    //fetches all courses 
+    function fetchAllCourses() public view returns (Course[] memory) {
         return coursesArray;
+    }
+
+    //fetches all students mapped with their courses
+    function fetchStudentsCourses() public view returns (Student memory) {
+        return idToStudent[msg.sender];
     }
 
     /* Mints a course and lists it in the marketplace */
@@ -58,31 +80,29 @@ contract PrimeroMarketplace is ERC1155{
     function listCourse(
         uint256 amount,
         uint256 price,
-        bytes memory data)
-        public
-        payable
-        returns (uint256)
-    {
+        bytes memory data
+    ) public payable returns (uint256) {
         _courseNFTIds.increment();
         uint256 newcourseNFTId = _courseNFTIds.current();
 
         _mint(msg.sender, newcourseNFTId, amount, data);
-        createCourse(newcourseNFTId, price,amount);
+        createCourse(newcourseNFTId, price, amount);
         return newcourseNFTId;
     }
 
-    function createCourse(uint256 courseNFTId, uint256 price, uint256 amount) private {
+    function createCourse(
+        uint256 courseNFTId,
+        uint256 price,
+        uint256 amount
+    ) private {
         address[] memory buyer;
         require(price > 0, "You cant list a free course 1wei >");
+        require(msg.value > listingPrice, "Insufficient Funds"); //Wallet balance must be greater than the listing price
         require(
-            msg.value > listingPrice,
-            "Insufficient Funds"
-        ); //Wallet balance must be greater than the listing price
-         require(
-             price * 1 ether > listingPrice,
+            price * 1 ether > listingPrice,
             "You can't list a course less than the listing price"
         ); //Price must be greater than the listing price
-        
+
         idToCourse[courseNFTId] = Course(
             courseNFTId,
             payable(msg.sender),
@@ -104,36 +124,62 @@ contract PrimeroMarketplace is ERC1155{
         coursesArray.push(idToCourse[courseNFTId]);
     }
 
-/* Transfers ownership of the CourseNFT and funds owner */
+    /* Transfers ownership of the CourseNFT and funds owner */
     function buyCourse(uint256 courseNFTId) public payable {
         uint256 amount = 1; //student can only buy one course at a time
         uint256 coursePrice = idToCourse[courseNFTId].price;
-        require(
-            msg.value > coursePrice,
-            "Insufficient funds"
-        );//Wallet Balance must be greater than price
+        require(msg.value > coursePrice, "Insufficient funds"); //Wallet Balance must be greater than price
 
-        setApprovalForAll(address(this),true); //approve safe transfer
-    
-        _safeTransferFrom(idToCourse[courseNFTId].seller, msg.sender, courseNFTId , amount, ""); //transfer ownership to student
+        setApprovalForAll(address(this), true); //approve safe transfer
+
+        _safeTransferFrom(
+            idToCourse[courseNFTId].seller,
+            msg.sender,
+            courseNFTId,
+            amount,
+            ""
+        ); //transfer ownership to student
         idToCourse[courseNFTId].owner = payable(msg.sender);
-         _coursesSold.increment();
-        onERC1155Received(msg.sender, idToCourse[courseNFTId].seller, courseNFTId, amount ,"");
+        _coursesSold.increment();
+        onERC1155Received(
+            msg.sender,
+            idToCourse[courseNFTId].seller,
+            courseNFTId,
+            amount,
+            ""
+        );
         payable(idToCourse[courseNFTId].owner).transfer(listingPrice); //send funds to primero
-        payable(idToCourse[courseNFTId].seller).transfer(idToCourse[courseNFTId].price); //send funds to instructor
+        payable(idToCourse[courseNFTId].seller).transfer(
+            idToCourse[courseNFTId].price
+        ); //send funds to instructor
 
-        idToCourse[courseNFTId].buyer.push(msg.sender);
-        coursesArray[courseNFTId-1].buyer.push(msg.sender);
-        coursesArray[courseNFTId-1].amount = balanceOf(idToCourse[courseNFTId].seller, courseNFTId);
-        
+        idToCourse[courseNFTId].buyer.push(msg.sender); // push buyer/students details to course mapping
+        coursesArray[courseNFTId - 1].buyer.push(msg.sender); // push buyer/student details to course array that we will be making calls to
+        coursesArray[courseNFTId - 1].amount = balanceOf(
+            idToCourse[courseNFTId].seller,
+            courseNFTId
+        );
+
+         idToStudent[msg.sender] = Student(
+            payable(msg.sender),
+            idToCourse[courseNFTId]
+        );
+
+        emit StudentCoursesCreated(
+            msg.sender,
+            idToCourse[courseNFTId]
+        );
     }
 
- 
-
-    function onERC1155Received(address, address, uint256, uint256, bytes memory) public virtual returns (bytes4) {
+    function onERC1155Received(
+        address,
+        address,
+        uint256,
+        uint256,
+        bytes memory
+    ) public virtual returns (bytes4) {
         return this.onERC1155Received.selector;
     }
-
 
     function setURI(string memory newuri) private {
         _setURI(newuri);
