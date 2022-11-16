@@ -16,18 +16,18 @@ contract PrimeroMarketplace is ERC1155 {
     using SafeMath for uint256;
     Counters.Counter private _courseNFTIds; //This is the count of all courses by their ID
     Counters.Counter private _coursesSold; //This is the count of all courses sold
-    uint256 public listingPrice = 0.0325 ether; //incase of resell, standard price
-    EnumerableSet.UintSet private _coursesUnSold; // all ids this contract holds that have not been set for sale
-    mapping(uint256 => uint256) public tokensHeldBalances; // id => balance (amount held not for sale)
+    uint256 public listingPrice = 0.000325 ether; //incase of resell, standard price
     EnumerableSet.UintSet private _studentId;
-    Counters.Counter private _studentIds; 
 
     constructor() ERC1155("") {}
 
     struct Course {
         uint256 courseNFTId; //auto incremental course Id
         address payable seller; //instructor
-        address payable owner; //primero's deployed contract
+        string sellerName; // instructor's name
+        string courseTitle; // course title
+        string courseDescription; // course description
+        address payable owner; 
         address[] buyer; // list of students who buy the course
         uint256 price; //cost of course
         uint256 amount;
@@ -46,6 +46,9 @@ contract PrimeroMarketplace is ERC1155 {
     event CourseItemCreated(
         uint256 courseNFTId,
         address seller,
+        string sellerName,
+        string courseTitle,
+        string courseDescription,
         address owner,
         uint256 price,
         uint256 amount,
@@ -80,20 +83,26 @@ contract PrimeroMarketplace is ERC1155 {
     function listCourse(
         uint256 amount,
         uint256 price,
+        string memory sellerName,
+        string memory courseTitle,
+        string memory courseDescription,
         bytes memory data
     ) public payable returns (uint256) {
         _courseNFTIds.increment();
         uint256 newcourseNFTId = _courseNFTIds.current();
 
         _mint(msg.sender, newcourseNFTId, amount, data);
-        createCourse(newcourseNFTId, price, amount);
+        createCourse(newcourseNFTId, price, amount, sellerName ,courseTitle , courseDescription);
         return newcourseNFTId;
     }
 
     function createCourse(
         uint256 courseNFTId,
         uint256 price,
-        uint256 amount
+        uint256 amount,
+        string memory sellerName,
+        string memory courseTitle,
+        string memory courseDescription
     ) private {
         address[] memory buyer;
         require(price > 0, "You cant list a free course 1wei >");
@@ -106,6 +115,9 @@ contract PrimeroMarketplace is ERC1155 {
         idToCourse[courseNFTId] = Course(
             courseNFTId,
             payable(msg.sender),
+            sellerName,
+            courseTitle,
+            courseDescription,
             payable(address(this)),
             buyer,
             price * 1 ether,
@@ -116,6 +128,9 @@ contract PrimeroMarketplace is ERC1155 {
         emit CourseItemCreated(
             courseNFTId,
             msg.sender,
+            sellerName,
+            courseTitle,
+            courseDescription,
             address(this),
             price,
             amount,
