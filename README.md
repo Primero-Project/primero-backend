@@ -1,2 +1,2 @@
 # Primero Course Marketplace
-https://goerli.etherscan.io/address/0xdDfCd52230d94E0C410e1FF6A0650272a0cECED1
+https://mumbai.polygonscan.com/address/0x6c7F1A0014a68a7EBf1483691507502f92B3e241
